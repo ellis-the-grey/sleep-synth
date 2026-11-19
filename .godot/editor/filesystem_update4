@@ -1,9 +1,4 @@
-res://synth_core/dsp/moog_ladder_filter.gd
-res://autoload/midi_router.gd
-res://euclid_ui/keyboards/hex_harmonic_table.gd
-res://instruments/minimod/minimod_main.gd
-res://synth_core/dsp/synth_rig.gd
 res://instruments/minimod/minimod_main.tscn
-res://synth_core/dsp/synth_voice.gd
-res://autoload/synth_bus.gd
-res://euclid_ui/keyboards/piano_strip.gd
+res://instruments/minimod/minimod_main.gd
+res://instruments/sleep_synth/sleep_mode_panel.gd
+res://instruments/sleep_synth/sleep_layers_engine.gd

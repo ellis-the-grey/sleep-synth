@@ -19,9 +19,12 @@ var _accidental_toggle: EuclidToggle
 var _piano_toggle: EuclidToggle
 var _hex_toggle: EuclidToggle
 var _qwerty_mode_toggle: EuclidToggle
+var _sleep_mode_toggle: EuclidToggle
 var _midi_status_label: Label
 
 # Rack Containers & Widgets
+var _rack_scroll: ScrollContainer
+var _sleep_panel: SleepModePanel
 var _osc_container: HBoxContainer
 var _add_osc_btn: Button
 
@@ -90,17 +93,27 @@ func _build_ui() -> void:
 	# --- 1. TOP COMMAND BAR ---
 	main_vbox.add_child(_build_top_bar())
 
-	# --- 2. RACK SCROLL AREA ---
-	var rack_scroll := ScrollContainer.new()
-	rack_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	rack_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	main_vbox.add_child(rack_scroll)
+	# --- 2. EMBEDDED SLEEP MODE PANEL (Hidden by default) ---
+	_sleep_panel = SleepModePanel.new()
+	_sleep_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_sleep_panel.visible = false
+	_sleep_panel.bind_rig(_rig)
+	_sleep_panel.exit_sleep_mode_requested.connect(func() -> void:
+		_set_sleep_mode_active(false)
+	)
+	main_vbox.add_child(_sleep_panel)
+
+	# --- 3. RACK SCROLL AREA ---
+	_rack_scroll = ScrollContainer.new()
+	_rack_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_rack_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	main_vbox.add_child(_rack_scroll)
 
 	var rack_vbox := VBoxContainer.new()
 	rack_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rack_vbox.add_theme_constant_override("separation", 8)
-	rack_scroll.add_child(rack_vbox)
+	_rack_scroll.add_child(rack_vbox)
 
 	# Row A: Modular Oscillators + Add Button
 	var osc_band := _make_framed_panel("OSCILLATOR BANK (MODULAR ARRAY)")
@@ -137,7 +150,7 @@ func _build_ui() -> void:
 	lower_rack_row.add_child(_build_contours_panel())
 	lower_rack_row.add_child(_build_scope_and_mod_panel())
 
-	# --- 3. BOTTOM HIDEABLE KEYBOARD CONTROLLERS ---
+	# --- 4. BOTTOM HIDEABLE KEYBOARD CONTROLLERS ---
 	_keyboard_dock = VBoxContainer.new()
 	_keyboard_dock.add_theme_constant_override("separation", 6)
 	main_vbox.add_child(_keyboard_dock)
@@ -150,6 +163,24 @@ func _build_ui() -> void:
 	_hex_table = HexHarmonicTable.new()
 	_hex_table.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_keyboard_dock.add_child(_hex_table)
+
+
+func _set_sleep_mode_active(active: bool) -> void:
+	if _sleep_mode_toggle != null:
+		_sleep_mode_toggle.set_active_silent(active)
+	if active:
+		SynthBus.panic()
+		_rack_scroll.visible = false
+		_keyboard_dock.visible = false
+		_sleep_panel.visible = true
+		_sleep_panel.bind_rig(_rig)
+	else:
+		_sleep_panel.stop_sleep_audio()
+		_sleep_panel.visible = false
+		_rack_scroll.visible = true
+		_keyboard_dock.visible = true
+		_rig.load_patch(_patch)
+		_bind_patch_to_ui()
 
 
 func _make_framed_panel(title: String, min_sz: Vector2 = Vector2.ZERO) -> PanelContainer:
@@ -196,12 +227,12 @@ func _build_top_bar() -> Control:
 	content.add_child(row)
 
 	_preset_dropdown = OptionButton.new()
-	_preset_dropdown.custom_minimum_size = Vector2(165, 28)
+	_preset_dropdown.custom_minimum_size = Vector2(150, 28)
 	_preset_dropdown.item_selected.connect(_on_preset_selected)
 	row.add_child(_preset_dropdown)
 
 	_patch_name_edit = LineEdit.new()
-	_patch_name_edit.custom_minimum_size = Vector2(130, 28)
+	_patch_name_edit.custom_minimum_size = Vector2(115, 28)
 	_patch_name_edit.placeholder_text = "Patch Name"
 	_patch_name_edit.text_changed.connect(func(new_txt: String) -> void:
 		if _patch != null:
@@ -211,15 +242,23 @@ func _build_top_bar() -> Control:
 
 	var save_btn := Button.new()
 	save_btn.text = "SAVE .TRES"
-	save_btn.custom_minimum_size = Vector2(80, 28)
+	save_btn.custom_minimum_size = Vector2(76, 28)
 	save_btn.pressed.connect(_on_save_patch_pressed)
 	row.add_child(save_btn)
 
 	var init_btn := Button.new()
 	init_btn.text = "INIT"
-	init_btn.custom_minimum_size = Vector2(48, 28)
+	init_btn.custom_minimum_size = Vector2(44, 28)
 	init_btn.pressed.connect(_on_init_patch_pressed)
 	row.add_child(init_btn)
+
+	# Placed prominently on the left so it never clips off narrow viewports
+	_sleep_mode_toggle = EuclidToggle.new()
+	_sleep_mode_toggle.label = "SLEEP MODE"
+	_sleep_mode_toggle.accent_color = EuclidPalette.ACCENT_GOLD
+	_sleep_mode_toggle.custom_minimum_size = Vector2(96, 28)
+	_sleep_mode_toggle.toggled.connect(_set_sleep_mode_active)
+	row.add_child(_sleep_mode_toggle)
 
 	_voices_dial = EuclidDial.new()
 	_voices_dial.label = "VOICES"
@@ -227,7 +266,7 @@ func _build_top_bar() -> Control:
 	_voices_dial.max_value = 16.0
 	_voices_dial.default_value = 1.0
 	_voices_dial.step = 1.0
-	_voices_dial.custom_minimum_size = Vector2(60, 64)
+	_voices_dial.custom_minimum_size = Vector2(56, 64)
 	_voices_dial.value_changed.connect(func(v: float) -> void:
 		if _patch != null:
 			_patch.max_voices = int(v)
@@ -242,7 +281,7 @@ func _build_top_bar() -> Control:
 	_glide_dial.min_value = 0.0
 	_glide_dial.max_value = 2000.0
 	_glide_dial.default_value = 35.0
-	_glide_dial.custom_minimum_size = Vector2(60, 64)
+	_glide_dial.custom_minimum_size = Vector2(56, 64)
 	_glide_dial.value_changed.connect(func(v: float) -> void:
 		if _patch != null:
 			_patch.glide_ms = v
@@ -252,7 +291,7 @@ func _build_top_bar() -> Control:
 
 	_legato_toggle = EuclidToggle.new()
 	_legato_toggle.label = "RETRIG"
-	_legato_toggle.custom_minimum_size = Vector2(70, 28)
+	_legato_toggle.custom_minimum_size = Vector2(64, 28)
 	_legato_toggle.toggled.connect(func(on: bool) -> void:
 		if _patch != null:
 			_patch.legato_retrigger = on
@@ -266,7 +305,7 @@ func _build_top_bar() -> Control:
 	_master_dial.min_value = 0.0
 	_master_dial.max_value = 1.0
 	_master_dial.default_value = 0.72
-	_master_dial.custom_minimum_size = Vector2(60, 64)
+	_master_dial.custom_minimum_size = Vector2(56, 64)
 	_master_dial.value_changed.connect(func(v: float) -> void:
 		if _patch != null:
 			_patch.master_volume = v
@@ -283,13 +322,13 @@ func _build_top_bar() -> Control:
 	row.add_child(view_col)
 
 	var kbd_btn_row := HBoxContainer.new()
-	kbd_btn_row.add_theme_constant_override("separation", 6)
+	kbd_btn_row.add_theme_constant_override("separation", 5)
 	view_col.add_child(kbd_btn_row)
 
 	_accidental_toggle = EuclidToggle.new()
 	_accidental_toggle.options = ["D#/Eb", "SHARP #", "FLAT b"]
 	_accidental_toggle.accent_color = EuclidPalette.ACCENT_GOLD
-	_accidental_toggle.custom_minimum_size = Vector2(74, 26)
+	_accidental_toggle.custom_minimum_size = Vector2(72, 26)
 	_accidental_toggle.option_selected.connect(func(idx: int) -> void:
 		SynthBus.accidental_mode = idx as SynthBus.AccidentalMode
 	)
@@ -298,7 +337,7 @@ func _build_top_bar() -> Control:
 	_qwerty_mode_toggle = EuclidToggle.new()
 	_qwerty_mode_toggle.options = ["KEYS: HEX", "KEYS: PIANO"]
 	_qwerty_mode_toggle.accent_color = EuclidPalette.ACCENT_CYAN
-	_qwerty_mode_toggle.custom_minimum_size = Vector2(98, 26)
+	_qwerty_mode_toggle.custom_minimum_size = Vector2(96, 26)
 	_qwerty_mode_toggle.option_selected.connect(func(idx: int) -> void:
 		var mode := MidiRouter.QwertyLayoutMode.HEX if idx == 0 else MidiRouter.QwertyLayoutMode.PIANO
 		MidiRouter.set_layout_mode(mode)
@@ -313,7 +352,7 @@ func _build_top_bar() -> Control:
 	_piano_toggle = EuclidToggle.new()
 	_piano_toggle.label = "PIANO"
 	_piano_toggle.active = true
-	_piano_toggle.custom_minimum_size = Vector2(68, 26)
+	_piano_toggle.custom_minimum_size = Vector2(66, 26)
 	_piano_toggle.toggled.connect(func(vis: bool) -> void:
 		if _piano_strip != null:
 			_piano_strip.visible = vis
@@ -324,7 +363,7 @@ func _build_top_bar() -> Control:
 	_hex_toggle = EuclidToggle.new()
 	_hex_toggle.label = "HEX GRID"
 	_hex_toggle.active = true
-	_hex_toggle.custom_minimum_size = Vector2(82, 26)
+	_hex_toggle.custom_minimum_size = Vector2(80, 26)
 	_hex_toggle.toggled.connect(func(vis: bool) -> void:
 		if _hex_table != null:
 			_hex_table.visible = vis
@@ -334,7 +373,7 @@ func _build_top_bar() -> Control:
 
 	var panic_btn := Button.new()
 	panic_btn.text = "PANIC"
-	panic_btn.custom_minimum_size = Vector2(58, 26)
+	panic_btn.custom_minimum_size = Vector2(54, 26)
 	panic_btn.pressed.connect(func() -> void:
 		SynthBus.panic()
 	)
